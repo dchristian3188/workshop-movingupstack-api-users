@@ -1,0 +1,14 @@
+proton: ServiceSpec
+pipeline:
+  dockerfile: Dockerfile
+  unit_test_command: echo 'add your unit test command here'
+  environment_account_ids: ''
+instances:
+  - name: api-users
+    environment: workshop-dev
+    spec:
+      port: 5000
+      path: /api/users
+      uri_priority: 20
+      desired_count: 2
+      task_size: small
