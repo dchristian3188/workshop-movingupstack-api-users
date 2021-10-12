@@ -7,5 +7,5 @@ aws proton create-service \
   --repository-id "dchristian3188/workshop-movingupstack-api-users" \
   --branch "master" \
   --template-name Fargate-Public-Loadbalanced-Service-Redis-MySQL \
-  --template-major-version 6 \
+  --template-major-version 9 \
   --spec file://api-users.yaml

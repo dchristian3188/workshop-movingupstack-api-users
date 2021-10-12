@@ -21,64 +21,69 @@ db_user = os.environ.get('DB_USER', 'root')
 db_passwd = os.environ.get('DB_PASSWORD', 'myAwesomePassword')
 db_name = os.environ.get('DATABASE', 'mydb')
 
-mydb = mysql.connector.connect(
-        host=db_host,
-        user=db_user,
-        password=db_passwd
-    )
-cursor = mydb.cursor()
+init_db = os.environ.get('INIT_DB', 'true') in ['True', 'true']
+
+conn = None
 
 
-def create_db(cursor):
-    try:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(db_name))
-    except mysql.connector.Error as err:
-        print("Failed creating database: {}".format(err))
-        exit(1)
+class DbInitHelper:
 
-try:
-    cursor.execute("USE {}".format(db_name))
-except mysql.connector.Error as err:
-    print("Database {} does not exists.".format(db_name))
-    if err.errno == errorcode.ER_BAD_DB_ERROR:
-        create_db(cursor)
-        print("Database {} created successfully.".format(db_name))
-        mydb.database = db_name
-    else:
-        print(err)
-        exit(1)
+    def __init__(self):
+        self.is_data_set = False
+        self.create_db()
+        self.conn = mysql.connector.connect(host=db_host, user=db_user, passwd=db_passwd, database=db_name)
+        print(f'Successfully created DB connection for database <{db_name}>.')
+        self.create_table()
 
-def create_table():
-    try:
-        print("Creating table users")
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS `users`(
-            `id` int NOT NULL,
-            `title` varchar(50) NOT NULL,
-            `createdBy` int NOT NULL,
-            PRIMARY KEY (`id`)
-            );
-        """)
-        
-        cursor.execute("""
-            insert into `users`(`id`,`title`,`createdBy`) 
-                values (5,'users up and running!',2);
-        """)
-    except mysql.connector.Error as err:
-        if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
-            print("already exists.")
+    def create_db(self):
+        try:
+            conn = mysql.connector.connect(host=db_host, user=db_user, passwd=db_passwd)
+            cursor = conn.cursor()
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+            conn.close()
+
+            print(f'Successfully created database <{db_name}>, if not exists.')
+            self.is_data_set = True
+        except mysql.connector.Error as err:
+            app.logger.info("Failed creating database: {}".format(err))
+            print("Failed creating database: {}".format(err))
+
+    def create_table(self):
+        try:
+            cursor = self.conn.cursor()
+            print("Creating table users")
+            cursor.execute("""
+                CREATE TABLE `users` (
+                  `id` int NOT NULL,
+                  `username` varchar(50) NOT NULL,
+                  `name` varchar(50) NOT NULL,
+                  `bio` varchar(50) NOT NULL,
+                  PRIMARY KEY (`id`)
+                );
+            """)
+
+            cursor.execute("""
+                insert into `users`(`id`,`username`,`name`,`bio`)
+                values (1,'marceline','Marceline Abadeer','1000 year old vampire queen, musician');
+            """)
+
+        except mysql.connector.Error as err:
+            if err.errno == errorcode.ER_TABLE_EXISTS_ERROR:
+                print(f"Table <users> already exists.")
+            else:
+                print(err.msg)
         else:
-            print(err.msg)
-    else:
-        print("OK")
+            print(f'Successfully inserted data into table <users>.')
 
-create_table()
-    
+    def get_connection(self):
+        return self.conn
+
+
 def get_from_db(table):
     if local_db:
         return db.get(table)
     try:
+        cursor = conn.cursor()
         cursor.execute(f"SELECT * FROM {table}")
         return cursor.fetchall()
     except Exception as error:
@@ -92,11 +97,13 @@ def users():
     try:
         value = red.get(key)
         if not value:
-            users = get_from_db(key)
-            red.set(key, str(json.dumps(users)))
+            data = get_from_db(key)
+            keys = ['id', 'username', 'name', 'bio']
+            obj = dict(zip(keys, data[0]))
+            red.set(key, str(json.dumps(obj)))
 
             body['source'] = 'database'
-            body['data'] = users
+            body['data'] = obj
         else:
             body['source'] = 'redis'
             body['data'] = json.loads(value.decode('ascii'))
@@ -114,6 +121,17 @@ def clear_cache():
     red.delete("users")
 
     return "cleared users", 200
+    
+@app.route('/api/users/health', methods=['GET'], strict_slashes=False)
+def health():
+    return "", 200
+
+
+if init_db:
+    conn = DbInitHelper().get_connection()
+    if conn.is_connected():
+        print('Successfully completed DB init.')
+        print(get_from_db('users'))
 
 
 if __name__ == '__main__':
